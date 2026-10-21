@@ -1,0 +1,32 @@
+{
+  "voices": [
+    {
+      "id": "piper-en-ljspeech",
+      "name": "LJSpeech · female",
+      "language": "en",
+      "model": "assets/models/piper/en_US-ljspeech-medium.onnx",
+      "default": true
+    },
+    {
+      "id": "piper-en-lessac",
+      "name": "Lessac",
+      "language": "en",
+      "model": "assets/models/piper/en_US-lessac-medium.onnx",
+      "default": false
+    },
+    {
+      "id": "piper-ru-denis",
+      "name": "Denis · male",
+      "language": "ru",
+      "model": "assets/models/piper/ru_RU-denis-medium.onnx",
+      "default": true
+    },
+    {
+      "id": "piper-ru-irina",
+      "name": "Irina · female",
+      "language": "ru",
+      "model": "assets/models/piper/ru_RU-irina-medium.onnx",
+      "default": false
+    }
+  ]
+}

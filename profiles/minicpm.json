@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "name": "minicpm",
+  "mode": "composed",
+  "listening": {
+    "provider": "whisper",
+    "name": "Whisper small · whisper.cpp",
+    "binary": "../assets/runtimes/whisper-cuda/Release/whisper-server.exe",
+    "cpu_binary": "../assets/runtimes/whisper/Release/whisper-server.exe",
+    "model": "../assets/models/whisper/ggml-small-q5_1.bin"
+  },
+  "thinking": {
+    "provider": "llamacpp",
+    "name": "MiniCPM-o 4.5 · llama.cpp text chat",
+    "binary": "../assets/runtimes/llamacpp/llama-server.exe",
+    "model": "../assets/models/minicpm/MiniCPM-o-4_5-Q4_K_M.gguf"
+  },
+  "speaking": {
+    "provider": "piper",
+    "name": "Piper · installed ONNX voices",
+    "binary": "../assets/runtimes/piper/piper/piper.exe",
+    "voices": "voices.json"
+  }
+}

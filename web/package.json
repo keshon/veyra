@@ -1,0 +1,24 @@
+{
+  "name": "veyra-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "assets": "node scripts/licenses.mjs",
+    "dev": "npm run assets && vite --host 127.0.0.1",
+    "check": "npm run assets && svelte-check --tsconfig ./tsconfig.json",
+    "build": "npm run assets && vite build",
+    "test:ui": "node tests/audio-check.mjs && node tests/turn-detector.mjs && node tests/ui-smoke.mjs"
+  },
+  "dependencies": {
+    "svelte": "^5.0.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "vite": "^6.0.0",
+    "typescript": "^5.7.0",
+    "svelte-check": "^4.0.0",
+    "@types/node": "^24.0.0",
+    "@playwright/test": "^1.0.0"
+  }
+}

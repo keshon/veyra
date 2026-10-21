@@ -1,0 +1,14 @@
+{
+  "root": ".",
+  "data_dir": "",
+  "listen": "127.0.0.1:8090",
+  "profile": "chatterbox-nano",
+  "reply": "en",
+  "fallback": "en",
+  "context": 4096,
+  "gpu_layers": 0,
+  "model_port": 19081,
+  "asr_port": 19083,
+  "asr_cpu": false,
+  "voice_catalog": "profiles/voices.json"
+}

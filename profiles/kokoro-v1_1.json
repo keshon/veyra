@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "name": "kokoro-v1_1",
+  "mode": "composed",
+  "listening": {
+    "provider": "whisper",
+    "name": "Whisper small · CUDA · greedy English",
+    "binary": "../assets/runtimes/whisper-cuda/Release/whisper-server.exe",
+    "cpu_binary": "../assets/runtimes/whisper/Release/whisper-server.exe",
+    "model": "../assets/models/whisper/ggml-small-q5_1.bin"
+  },
+  "thinking": {
+    "provider": "llamacpp",
+    "name": "Chronos-Gold-12B · llama.cpp",
+    "binary": "../assets/runtimes/llamacpp/llama-server.exe",
+    "model": "../assets/models/qwen/Chronos-Gold-12B-1.0.i1-Q4_K_M.gguf"
+  },
+  "speaking": {
+    "provider": "kokoro",
+    "name": "Kokoro v1.1 · sherpa-onnx CPU",
+    "binary": "../bin/kokoro-worker.exe",
+    "library": "../assets/runtimes/sherpa/lib",
+    "model": "../assets/models/kokoro"
+  }
+}

@@ -1,0 +1,17 @@
+[
+  {
+    "id": "assistant",
+    "name": "Everyday assistant",
+    "instruction_file": "../internal/conversation/prompts/assistant.txt"
+  },
+  {
+    "id": "partner",
+    "name": "Thinking partner",
+    "instruction_file": "../internal/conversation/prompts/partner.txt"
+  },
+  {
+    "id": "tutor",
+    "name": "Patient tutor",
+    "instruction_file": "../internal/conversation/prompts/tutor.txt"
+  }
+]

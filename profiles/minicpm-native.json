@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "name": "minicpm-native",
+  "mode": "minicpm-native",
+  "listening": {
+    "provider": "minicpm",
+    "name": "MiniCPM-o 4.5 · Whisper-medium-based encoder"
+  },
+  "thinking": {
+    "provider": "minicpm",
+    "name": "MiniCPM-o 4.5 · llama.cpp-omni",
+    "binary": "../assets/runtimes/llamacpp/llama-server.exe",
+    "model": "../assets/models/minicpm/MiniCPM-o-4_5-Q4_K_M.gguf"
+  },
+  "speaking": {
+    "provider": "minicpm",
+    "name": "MiniCPM-o 4.5 · native speech / Token2Wav"
+  },
+  "native": {
+    "model_dir": "../assets/models/minicpm",
+    "tts_dir": "../assets/models/minicpm/tts",
+    "reference": "../assets/models/minicpm/reference.wav"
+  }
+}

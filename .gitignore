@@ -1,0 +1,29 @@
+# Local state, experiments and deferred documentation
+/.veyra/
+/var/
+/.cache/
+/lab/
+/temp/
+/docs/
+
+# Downloaded runtimes, weights and generated installation inventories
+/assets/runtimes/
+/assets/models/
+/assets/chatterbox-manifest.json
+/bin/
+
+# Dependencies and caches
+/web/node_modules/
+/web/.vite/
+**/__pycache__/
+*.pyc
+
+# Private configuration and local recordings
+.env
+.env.*
+!.env.example
+/config.json
+*.local.json
+*.log
+*.wav
+*.mp3

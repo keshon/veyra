@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "name": "chatterbox",
+  "mode": "composed",
+  "listening": {
+    "provider": "whisper",
+    "name": "Whisper small · CUDA · greedy English",
+    "binary": "../assets/runtimes/whisper-cuda/Release/whisper-server.exe",
+    "cpu_binary": "../assets/runtimes/whisper/Release/whisper-server.exe",
+    "model": "../assets/models/whisper/ggml-small-q5_1.bin"
+  },
+  "thinking": {
+    "provider": "llamacpp",
+    "name": "Chronos-Gold-12B · llama.cpp",
+    "binary": "../assets/runtimes/llamacpp/llama-server.exe",
+    "model": "../assets/models/qwen/Chronos-Gold-12B-1.0.i1-Q4_K_M.gguf"
+  },
+  "speaking": {
+    "provider": "chatterbox",
+    "name": "Chatterbox Nano В· CUDA В· resident Python worker",
+    "binary": "../assets/runtimes/chatterbox/python.exe",
+    "model": "../assets/models/chatterbox/nano",
+    "variant": "nano"
+  }
+}

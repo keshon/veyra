@@ -1,0 +1,173 @@
+{
+  "voices": [
+    {
+      "id": "af_alloy",
+      "name": "Alloy · American female",
+      "language": "en",
+      "speaker": 0
+    },
+    {
+      "id": "af_aoede",
+      "name": "Aoede · American female",
+      "language": "en",
+      "speaker": 1
+    },
+    {
+      "id": "af_bella",
+      "name": "Bella · American female",
+      "language": "en",
+      "speaker": 2
+    },
+    {
+      "id": "af_heart",
+      "name": "Heart · American female",
+      "language": "en",
+      "speaker": 3,
+      "default": true
+    },
+    {
+      "id": "af_jessica",
+      "name": "Jessica · American female",
+      "language": "en",
+      "speaker": 4
+    },
+    {
+      "id": "af_kore",
+      "name": "Kore · American female",
+      "language": "en",
+      "speaker": 5
+    },
+    {
+      "id": "af_nicole",
+      "name": "Nicole · American female",
+      "language": "en",
+      "speaker": 6
+    },
+    {
+      "id": "af_nova",
+      "name": "Nova · American female",
+      "language": "en",
+      "speaker": 7
+    },
+    {
+      "id": "af_river",
+      "name": "River · American female",
+      "language": "en",
+      "speaker": 8
+    },
+    {
+      "id": "af_sarah",
+      "name": "Sarah · American female",
+      "language": "en",
+      "speaker": 9
+    },
+    {
+      "id": "af_sky",
+      "name": "Sky · American female",
+      "language": "en",
+      "speaker": 10
+    },
+    {
+      "id": "am_adam",
+      "name": "Adam · American male",
+      "language": "en",
+      "speaker": 11
+    },
+    {
+      "id": "am_echo",
+      "name": "Echo · American male",
+      "language": "en",
+      "speaker": 12
+    },
+    {
+      "id": "am_eric",
+      "name": "Eric · American male",
+      "language": "en",
+      "speaker": 13
+    },
+    {
+      "id": "am_fenrir",
+      "name": "Fenrir · American male",
+      "language": "en",
+      "speaker": 14
+    },
+    {
+      "id": "am_liam",
+      "name": "Liam · American male",
+      "language": "en",
+      "speaker": 15
+    },
+    {
+      "id": "am_michael",
+      "name": "Michael · American male",
+      "language": "en",
+      "speaker": 16
+    },
+    {
+      "id": "am_onyx",
+      "name": "Onyx · American male",
+      "language": "en",
+      "speaker": 17
+    },
+    {
+      "id": "am_puck",
+      "name": "Puck · American male",
+      "language": "en",
+      "speaker": 18
+    },
+    {
+      "id": "am_santa",
+      "name": "Santa · American male",
+      "language": "en",
+      "speaker": 19
+    },
+    {
+      "id": "bf_alice",
+      "name": "Alice · British female",
+      "language": "en",
+      "speaker": 20
+    },
+    {
+      "id": "bf_emma",
+      "name": "Emma · British female",
+      "language": "en",
+      "speaker": 21
+    },
+    {
+      "id": "bf_isabella",
+      "name": "Isabella · British female",
+      "language": "en",
+      "speaker": 22
+    },
+    {
+      "id": "bf_lily",
+      "name": "Lily · British female",
+      "language": "en",
+      "speaker": 23
+    },
+    {
+      "id": "bm_daniel",
+      "name": "Daniel · British male",
+      "language": "en",
+      "speaker": 24
+    },
+    {
+      "id": "bm_fable",
+      "name": "Fable · British male",
+      "language": "en",
+      "speaker": 25
+    },
+    {
+      "id": "bm_george",
+      "name": "George · British male",
+      "language": "en",
+      "speaker": 26
+    },
+    {
+      "id": "bm_lewis",
+      "name": "Lewis · British male",
+      "language": "en",
+      "speaker": 27
+    }
+  ]
+}
