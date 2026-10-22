@@ -101,6 +101,8 @@ func Run(ctx context.Context, settings config.Settings) error {
 		closeRuntime := current.close
 		current.close = func() { loadCancel(); closeRuntime() }
 		m.current = current
+		_, port, _ := net.SplitHostPort(listener.Addr().String())
+		log.Printf("Open Veyra: http://localhost:%s/", port)
 	}()
 	defer func() {
 		m.gate.Lock()

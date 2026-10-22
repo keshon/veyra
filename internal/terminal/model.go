@@ -43,6 +43,8 @@ type recordedMsg struct {
 }
 type devicesMsg string
 type pollMsg struct{}
+type playbackMarkedMsg struct{ err error }
+
 type model struct {
 	newBackendProfile string
 	picker            *picker
@@ -59,6 +61,8 @@ type model struct {
 	status                                     serviceStatus
 	notice                                     string
 	turnWarning                                string
+	playbackStopped                            bool
+	playbackTurnID                             uint64
 	history                                    []string
 	introShown, busy                           bool
 	revision                                   int
@@ -203,6 +207,8 @@ func (m *model) begin(text string, audio []byte) tea.Cmd {
 	rev := m.revision
 	ctx, cancel := context.WithCancel(m.ctx)
 	m.turnCancel = cancel
+	m.playbackStopped = false
+	m.playbackTurnID = 0
 	m.player = newPlayback(ctx)
 	player := m.player
 	m.assistant = -1
@@ -559,7 +565,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		return m, m.poll()
+	case playbackMarkedMsg:
+		m.busy = false
+		if msg.err != nil {
+			m.notice = "Could not mark interrupted speech: " + msg.err.Error()
+		}
+		if cmd := m.submitPendingVoice(); cmd != nil {
+			return m, cmd
+		}
+		return m, m.poll()
 	case eventMsg:
+		if msg.revision == m.revision && msg.event.TurnID != 0 {
+			m.playbackTurnID = msg.event.TurnID
+		}
 		if msg.revision != m.revision || m.interrupted {
 			return m, nil
 		}
@@ -597,6 +615,18 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.player = nil
 		m.turnCancel = nil
 		m.cooldown = time.Now().Add(350 * time.Millisecond)
+
+		if msg.err == nil && m.playbackStopped && m.playbackTurnID != 0 {
+			m.playbackStopped = false
+			id := m.playbackTurnID
+			mark := func() tea.Msg {
+				return playbackMarkedMsg{m.client.action(m.ctx, "/api/interrupted", map[string]any{"turn_id": id})}
+			}
+			m.status.State = "ready"
+			m.notice = "Speech stopped."
+			m.busy = true
+			return m, mark
+		}
 		if m.interrupted && m.status.Capabilities.InterruptionMode == "drain" && msg.err == nil {
 			m.interrupted = false
 			m.status.State = "ready"
@@ -643,6 +673,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+r":
 			return m, m.record()
 		case "ctrl+o":
+			if m.player != nil {
+				m.playbackStopped = true
+			}
 			if m.player != nil {
 				m.player.cancel()
 			}

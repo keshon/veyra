@@ -98,6 +98,20 @@ func HandlerConfigured(s *conversation.Session, output string, contextSize int, 
 		}
 		w.Write([]byte("{}"))
 	})
+	mux.HandleFunc("POST /api/interrupted", func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			TurnID uint64 `json:"turn_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			http.Error(w, "invalid turn", 400)
+			return
+		}
+		if err := s.MarkInterrupted(input.TurnID); err != nil {
+			writeError(w, err)
+			return
+		}
+		w.Write([]byte("{}"))
+	})
 	mux.HandleFunc("POST /api/cancel", func(w http.ResponseWriter, r *http.Request) { s.Cancel(); w.Write([]byte("{}")) })
 	mux.HandleFunc("POST /api/voice-reference", func(w http.ResponseWriter, r *http.Request) {
 		data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1000000))

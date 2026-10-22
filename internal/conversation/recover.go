@@ -52,3 +52,18 @@ func (s *Session) Recover(ctx context.Context) error {
 	}
 	return nil
 }
+
+// MarkInterrupted records that the latest generated reply was not fully heard.
+// The turn ID rejects stale playback callbacks after another turn has started.
+func (s *Session) MarkInterrupted(id uint64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if id == 0 || id != s.nextID || s.busy {
+		return ErrBusy
+	}
+	if n := len(s.history); n > 0 && s.history[n-1].Role == "assistant" {
+		s.history[n-1].Interrupted = true
+		return s.saveLocked()
+	}
+	return nil
+}

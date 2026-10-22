@@ -53,3 +53,21 @@ func TestStatefulBackendCannotInheritRecovery(t *testing.T) {
 		t.Fatal("failure was cleared")
 	}
 }
+
+func TestMarkInterruptedRejectsStalePlayback(t *testing.T) {
+	s := ready(t, &fake{})
+	s.nextID = 2
+	s.history = []Message{{Role: "user", Text: "Hi"}, {Role: "assistant", Text: "Hello"}}
+	if err := s.MarkInterrupted(1); !errors.Is(err, ErrBusy) {
+		t.Fatalf("stale callback: %v", err)
+	}
+	if s.history[1].Interrupted {
+		t.Fatal("stale playback changed history")
+	}
+	if err := s.MarkInterrupted(2); err != nil {
+		t.Fatal(err)
+	}
+	if !s.history[1].Interrupted {
+		t.Fatal("missing interruption marker")
+	}
+}

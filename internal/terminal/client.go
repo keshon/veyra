@@ -25,6 +25,7 @@ type serviceStatus struct {
 	Setup        httpapi.Metadata          `json:"setup"`
 }
 type wireEvent struct {
+	TurnID     uint64                    `json:"turn_id"`
 	Phase      string                    `json:"phase"`
 	Context    conversation.ContextUsage `json:"context_usage"`
 	Kind       string                    `json:"kind"`
