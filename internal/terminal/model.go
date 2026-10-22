@@ -44,9 +44,10 @@ type recordedMsg struct {
 type devicesMsg string
 type pollMsg struct{}
 type model struct {
-	picker           *picker
-	commandSelection selection.Model
-	dismissed        string
+	newBackendProfile string
+	picker            *picker
+	commandSelection  selection.Model
+	dismissed         string
 
 	captureRoot, vadMode                       string
 	ctx                                        context.Context
@@ -415,6 +416,16 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			oldState := m.status.State
 			m.status = msg.status
+			if m.newBackendProfile != "" {
+				if m.status.State == "error" {
+					m.newBackendProfile = ""
+				} else if m.status.State == "ready" && m.status.Capabilities.Profile == m.newBackendProfile {
+					m.history = nil
+					m.assistant = -1
+					m.newBackendProfile = ""
+					m.redraw()
+				}
+			}
 			if !m.busy && !m.detector.active && len(m.pendingVoice) == 0 && m.recording == nil && oldState != m.status.State {
 				if m.status.State == "ready" {
 					m.notice = "Ready."
@@ -453,6 +464,16 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.notice = "Updated."
 		}
 		return m, m.poll()
+	case modelSwitchMsg:
+		if msg.err != nil {
+			m.notice = msg.err.Error()
+		} else {
+			m.newBackendProfile = msg.profile
+			m.notice = "Loading backend; a new conversation will start when ready."
+		}
+		return m, m.poll()
+	case modelConfirmMsg:
+		return m, m.openPicker("Native backend · starts a new conversation", []choice{{"/settings", "Cancel", "Keep the current setup"}, {"/backend --new " + msg.profile, "Start new conversation", "Saved conversations remain available"}})
 	case modelsMsg:
 		if msg.err != nil {
 			m.notice = msg.err.Error()
@@ -469,10 +490,17 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		for _, entry := range entries {
 			if entry.Unavailable == "" {
-				items = append(items, choice{msg.command + " " + entry.ID, entry.Name, ""})
+				description := ""
+				if entry.Experimental {
+					description = "Experimental"
+				}
+				if entry.RequiresNew {
+					description += " · starts a new conversation"
+				}
+				items = append(items, choice{msg.command + " " + entry.ID, entry.Name, description})
 			}
 		}
-		return m, m.openPicker("Models · keeps conversation", items)
+		return m, m.openPicker("Models", items)
 	case devicesMsg:
 		return m, m.chooseMicrophone(string(msg))
 	case promptChangedMsg:

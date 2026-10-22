@@ -5,10 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
+	"log"
 	"net"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -24,12 +23,12 @@ type runtime struct {
 	close   func()
 }
 
-func loadRuntime(ctx context.Context, settings config.Settings) (*runtime, error) {
+func loadRuntimeProgress(ctx context.Context, settings config.Settings, report func(string, string)) (*runtime, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	ready := make(chan *runtime)
 	done := make(chan error, 1)
 	go func() {
-		done <- serveRuntime(ctx, settings, func(r *runtime) {
+		done <- serveRuntime(ctx, settings, report, func(r *runtime) {
 			select {
 			case ready <- r:
 			case <-ctx.Done():
@@ -40,6 +39,10 @@ func loadRuntime(ctx context.Context, settings config.Settings) (*runtime, error
 	case r := <-ready:
 		var once sync.Once
 		r.close = func() { once.Do(func() { cancel(); <-done }) }
+		if ctx.Err() != nil {
+			r.close()
+			return nil, ctx.Err()
+		}
 		return r, nil
 	case err := <-done:
 		cancel()
@@ -51,85 +54,20 @@ func loadRuntime(ctx context.Context, settings config.Settings) (*runtime, error
 	}
 }
 
-type modelChoice struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Unavailable string `json:"unavailable,omitempty"`
-}
-type modelCatalog struct {
-	Profile    string        `json:"profile"`
-	Model      string        `json:"model"`
-	Profiles   []modelChoice `json:"profiles"`
-	Models     []modelChoice `json:"models"`
-	Switchable bool          `json:"switchable"`
-}
-
-// modelCatalogFor lists installed manifests and GGUF files, including nested
-// model directories. Paths come from the installation or current explicit model.
-func modelCatalogFor(s config.Settings) modelCatalog {
-	c := modelCatalog{Profile: s.Profile, Model: s.ThinkingModel, Profiles: []modelChoice{}, Models: []modelChoice{}}
-	current, err := s.LoadProfile()
-	if err != nil {
-		return c
-	}
-	c.Switchable = current.Mode == "composed"
-	c.Model = current.Thinking.Model
-	entries, _ := filepath.Glob(filepath.Join(s.Root, "profiles", "*.json"))
-	if s.ProfileFile == "" {
-		entries = append([]string{filepath.Join(s.Root, "profiles", s.Profile+".json")}, entries...)
-	}
-	seenProfiles := map[string]bool{}
-	for _, path := range entries {
-		id := strings.TrimSuffix(filepath.Base(path), ".json")
-		candidate := s
-		candidate.Profile, candidate.ProfileFile = id, ""
-		p, err := candidate.LoadProfile()
-		if err != nil || p.Mode != "composed" {
-			continue
-		}
-		key := fmt.Sprintf("%s|%s|%s|%s|%s|%s", p.Listening.Model, p.Speaking.Provider, p.Speaking.Model, p.Speaking.Variant, p.Speaking.Voices, p.Speaking.Binary)
-		if seenProfiles[key] {
-			continue
-		}
-		seenProfiles[key] = true
-		item := modelChoice{ID: id, Name: strings.Split(p.Speaking.Name, " · ")[0]}
-		if err := Check(candidate); err != nil {
-			item.Unavailable = err.Error()
-		}
-		c.Profiles = append(c.Profiles, item)
-	}
-	seen := map[string]bool{}
-	add := func(path string) {
-		path = filepath.Clean(path)
-		if !seen[path] {
-			seen[path] = true
-			c.Models = append(c.Models, modelChoice{ID: path, Name: strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))})
-		}
-	}
-	add(c.Model)
-	roots := []string{filepath.Join(s.Root, "assets", "models"), filepath.Dir(c.Model)}
-	for _, root := range roots {
-		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-			if err == nil && !d.IsDir() && strings.EqualFold(filepath.Ext(path), ".gguf") {
-				add(path)
-			}
-			return nil
-		})
-	}
-	return c
-}
-
 type runtimeManager struct {
-	ctx      context.Context
-	gate     sync.RWMutex // Includes complete streamed turns, not just admission.
-	mu       sync.Mutex
-	current  *runtime
-	settings config.Settings
-	loading  bool
-	failure  string
-	catalog  modelCatalog
-	start    func(context.Context, config.Settings) (*runtime, error)
-	check    func(config.Settings) error
+	ctx                         context.Context
+	gate                        sync.RWMutex // Includes complete streamed turns, not just admission.
+	mu                          sync.Mutex
+	current                     *runtime
+	settings                    config.Settings
+	loading                     bool
+	failure                     string
+	catalog                     modelCatalog
+	start                       func(context.Context, config.Settings) (*runtime, error)
+	check                       func(config.Settings) error
+	stage, logDir, errorDetails string
+	started, stageStarted       time.Time
+	loadCancel                  context.CancelFunc
 }
 
 func Run(ctx context.Context, settings config.Settings) error {
@@ -138,18 +76,30 @@ func Run(ctx context.Context, settings config.Settings) error {
 		return err
 	}
 	defer listener.Close()
-	m := &runtimeManager{ctx: ctx, settings: settings, catalog: modelCatalogFor(settings), start: loadRuntime, check: Check, loading: true}
+	m := &runtimeManager{ctx: ctx, settings: settings, catalog: modelCatalogFor(settings), check: checkModelSetup, loading: true, started: time.Now(), stageStarted: time.Now(), stage: "Checking installation"}
+	m.start = func(ctx context.Context, s config.Settings) (*runtime, error) {
+		return loadRuntimeProgress(ctx, s, m.progress)
+	}
+	loadCtx, loadCancel := context.WithCancel(ctx)
+	m.loadCancel = loadCancel
 	m.gate.Lock()
 	go func() {
 		defer m.gate.Unlock()
-		current, err := m.start(ctx, settings)
+		current, err := m.start(loadCtx, settings)
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		m.loading = false
+		if err == nil && loadCtx.Err() != nil {
+			err = loadCtx.Err()
+			current.close()
+		}
 		if err != nil {
-			m.failure = fmt.Sprintf("Could not load models: %v. Choose a setup and retry.", err)
+			loadCancel()
+			m.failLocked(err)
 			return
 		}
+		closeRuntime := current.close
+		current.close = func() { loadCancel(); closeRuntime() }
 		m.current = current
 	}()
 	defer func() {
@@ -186,10 +136,21 @@ func (m *runtimeManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "cross-origin request", 403)
 		return
 	}
+	if r.URL.Path == "/api/models/cancel" && r.Method == "POST" {
+		m.mu.Lock()
+		if m.loading && m.loadCancel != nil {
+			m.loadCancel()
+		}
+		m.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{}"))
+		return
+	}
 	if r.URL.Path == "/api/models" {
 		if r.Method == "GET" {
 			m.mu.Lock()
 			c := m.catalog
+			c.CanRestore = m.current != nil && (m.failure != "" || m.current.session.Status().State == "error")
 			m.mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(c)
@@ -204,15 +165,25 @@ func (m *runtimeManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	m.mu.Lock()
 	current, loading, failure, settings := m.current, m.loading, m.failure, m.settings
+	stage := m.stage
+	if stage == "" {
+		stage = "Loading models"
+	}
+	startup := map[string]any{"stage": m.stage, "started_at": m.started, "stage_started_at": m.stageStarted, "log_dir": m.logDir, "can_cancel": loading && m.loadCancel != nil}
+	errorDetails := m.errorDetails
 	m.mu.Unlock()
+	if current != nil && failure == "" && current.session.Status().State == "error" {
+		failure = "The voice session stopped. Reload this setup or choose another backend."
+		errorDetails = current.session.Status().Detail
+	}
 	if current == nil {
 		if r.Method == "GET" && r.URL.Path == "/api/status" {
-			state, detail := "loading", "Loading models"
+			state, detail := "loading", stage
 			if !loading {
 				state, detail = "error", failure
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"state": state, "detail": detail, "preferences": map[string]string{"reply": settings.Reply, "fallback": settings.Fallback}, "capabilities": conversation.Capabilities{Languages: []string{}, Voices: []conversation.Voice{}}, "prompts": []conversation.Prompt{}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"state": state, "detail": detail, "startup": startup, "error_details": errorDetails, "preferences": map[string]string{"reply": settings.Reply, "fallback": settings.Fallback}, "capabilities": conversation.Capabilities{Languages: []string{}, Voices: []conversation.Voice{}}, "prompts": []conversation.Prompt{}})
 		} else if r.Method == "GET" && !strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, "/audio/") {
 			web.Handler().ServeHTTP(w, r)
 		} else {
@@ -222,12 +193,12 @@ func (m *runtimeManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/api/status" && r.Method == "GET" && (loading || failure != "") {
 		status := current.session.Status()
-		state, detail := "loading", "Loading models; conversation kept"
+		state, detail := "loading", stage
 		if !loading {
 			state, detail = "error", failure
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"state": state, "detail": detail, "preferences": status.Preferences, "capabilities": current.session.Capabilities(), "prompts": current.session.Prompts()})
+		_ = json.NewEncoder(w).Encode(map[string]any{"state": state, "detail": detail, "startup": startup, "error_details": errorDetails, "preferences": status.Preferences, "capabilities": current.session.Capabilities(), "prompts": current.session.Prompts(), "has_history": status.HasHistory})
 		return
 	}
 	if r.Method == "GET" {
@@ -251,8 +222,9 @@ func (m *runtimeManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (m *runtimeManager) change(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Profile string `json:"profile"`
-		Model   string `json:"model"`
+		Profile         string `json:"profile"`
+		Model           string `json:"model"`
+		NewConversation bool   `json:"new_conversation"`
 	}
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384))
 	d.DisallowUnknownFields()
@@ -272,11 +244,14 @@ func (m *runtimeManager) change(w http.ResponseWriter, r *http.Request) {
 	c := m.catalog
 	next := m.settings
 	old := m.current
+	failed := m.failure != ""
 	m.mu.Unlock()
 	validProfile, validModel := false, false
+	selected := modelChoice{}
 	for _, p := range c.Profiles {
 		if p.ID == input.Profile && p.Unavailable == "" {
 			validProfile = true
+			selected = p
 		}
 	}
 	for _, p := range c.Models {
@@ -284,12 +259,30 @@ func (m *runtimeManager) change(w http.ResponseWriter, r *http.Request) {
 			validModel = true
 		}
 	}
+	if selected.Mode == "minicpm-native" {
+		validModel = true
+	}
 	if !c.Switchable || !validProfile || !validModel {
 		m.gate.Unlock()
-		http.Error(w, "choose an installed composed profile and model", 400)
+		http.Error(w, "Choose an installed backend and a compatible text model.", 400)
+		return
+	}
+	if old != nil && old.session.Status().State == "ready" && !failed && !selected.RequiresNew && input.Profile == c.Profile && input.Model == c.Model {
+		m.gate.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{}"))
+		return
+	}
+	if selected.RequiresNew && !input.NewConversation {
+		m.gate.Unlock()
+		http.Error(w, "Switching native voice backends requires an explicit new conversation.", 409)
 		return
 	}
 	next.Profile, next.ProfileFile, next.ThinkingModel, next.Voice = input.Profile, "", input.Model, ""
+	if selected.Mode == "minicpm-native" {
+		next.ThinkingModel = ""
+	}
+
 	if p, e := next.LoadProfile(); e == nil && (p.Speaking.Provider == "chatterbox" || p.Speaking.Provider == "kokoro") {
 		next.Reply, next.Fallback = "en", "en"
 	}
@@ -300,15 +293,26 @@ func (m *runtimeManager) change(w http.ResponseWriter, r *http.Request) {
 	}
 	m.mu.Lock()
 	m.loading = true
-	m.failure = ""
+	m.failure, m.errorDetails = "", ""
+	m.stage = "Checking installation"
+	m.started = time.Now()
+	m.stageStarted = m.started
+	loadCtx, loadCancel := context.WithCancel(m.ctx)
+	m.loadCancel = loadCancel
 	m.mu.Unlock()
 	go func() {
 		defer m.gate.Unlock()
 		if old != nil {
 			old.close()
 		} // Release GPU memory and ports before starting replacements.
-		replacement, err := m.start(m.ctx, next)
-		if err == nil && old != nil {
+		replacement, err := m.start(loadCtx, next)
+		if err != nil {
+			loadCancel()
+		} else {
+			closeRuntime := replacement.close
+			replacement.close = func() { loadCancel(); closeRuntime() }
+		}
+		if err == nil && old != nil && !selected.RequiresNew {
 			err = old.session.CopyContextTo(replacement.session)
 		}
 		if err != nil && replacement != nil {
@@ -317,13 +321,56 @@ func (m *runtimeManager) change(w http.ResponseWriter, r *http.Request) {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		m.loading = false
+		if err == nil && loadCtx.Err() != nil {
+			err = loadCtx.Err()
+			replacement.close()
+		}
 		if err != nil {
-			m.failure = fmt.Sprintf("Could not load models: %v. Choose a setup and retry; conversation kept.", err)
+			m.failLocked(err)
 			return
 		}
 		m.current, m.settings = replacement, next
 		m.catalog.Profile, m.catalog.Model = input.Profile, input.Model
+		if p, e := next.LoadProfile(); e == nil {
+			m.catalog.Model = p.Thinking.Model
+		}
+		for i := range m.catalog.Profiles {
+			m.catalog.Profiles[i].RequiresNew = selected.Mode == "minicpm-native" || m.catalog.Profiles[i].Mode == "minicpm-native"
+		}
 	}()
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte("{}"))
+}
+
+func checkModelSetup(s config.Settings) error {
+	p, err := s.LoadProfile()
+	if err != nil {
+		return err
+	}
+	if p.Mode == "composed" {
+		if err = config.CheckChatModel(p.Thinking.Model); err != nil {
+			return fmt.Errorf("Choose a text chat model: %w", err)
+		}
+	}
+	return Check(s)
+}
+func (m *runtimeManager) progress(stage, dir string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.stage, m.logDir = stage, dir
+	m.stageStarted = time.Now()
+}
+func (m *runtimeManager) failLocked(err error) {
+	defer func() { log.Printf("Startup failed during %s: %v", m.stage, err) }()
+	m.errorDetails = err.Error()
+	m.failure = "The model runtime could not start. Choose another setup or retry."
+	if strings.Contains(strings.ToLower(err.Error()), "out of memory") {
+		m.failure = "Not enough memory to load this setup. Choose a smaller model or another backend."
+	}
+	if strings.Contains(err.Error(), "deadline exceeded") {
+		m.failure = "Model loading took too long. Try another backend or a smaller model."
+	}
+	if err == context.Canceled || strings.Contains(err.Error(), "context canceled") {
+		m.failure = "Model loading canceled. Choose a setup to continue."
+	}
 }

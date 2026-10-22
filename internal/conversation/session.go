@@ -95,6 +95,7 @@ type Backend interface {
 }
 
 type Status struct {
+	HasHistory     bool                 `json:"has_history"`
 	ConversationID string               `json:"conversation_id,omitempty"`
 	Context        ContextUsage         `json:"context_usage"`
 	State          string               `json:"state"`
@@ -167,7 +168,7 @@ func (s *Session) Capabilities() Capabilities {
 func (s *Session) Status() Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return Status{State: s.state, Detail: s.detail, Preferences: s.preferences.Clone(), ActiveTurn: s.activeID, Reference: s.reference, Context: s.contextUsage, ConversationID: s.savedID}
+	return Status{HasHistory: len(s.history) > 0 || s.summary != "", State: s.state, Detail: s.detail, Preferences: s.preferences.Clone(), ActiveTurn: s.activeID, Reference: s.reference, Context: s.contextUsage, ConversationID: s.savedID}
 }
 func (s *Session) Initialize(ctx context.Context) error {
 	s.mu.Lock()

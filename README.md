@@ -81,7 +81,8 @@ replies. Use headphones.
 
 Settings includes microphone selection, a local microphone test with playback,
 available voices/languages, light/dark appearance, and three visual skins:
-Cloud, Lens and Scanner. Skins do not change speech or models. Animation respects
+Cloud, Lens and Scanner. Listening reacts to microphone level, thinking has its
+own motion, and speaking reacts to playback. Skins do not change speech or models. Animation respects
 reduced motion unless explicitly overridden.
 
 The custom prompt below the preset selector overrides that preset when nonempty.
@@ -93,7 +94,8 @@ an explicit launch prompt or character card takes precedence at startup.
 between turns. Old workers unload before replacements start. Conversation context
 and prompt survive; a failed load leaves a retry available. Model choices last
 until the application closes. Discovery scans nested `assets/models` folders and
-the current generation model's folder.
+the current generation model's folder. GGUF metadata excludes audio encoders,
+projectors, speech decoders and caches from the generation picker.
 
 ### Terminal
 
@@ -143,6 +145,12 @@ are NDJSON. `/api/status`, `/api/models`, `/api/prompt`, `/api/preferences`,
 `/api/turn`, `/api/text`, `/api/cancel`, `/api/reset` and `/api/voice-reference`
 are local interfaces, not a remote or multi-user API.
 
+Startup reports the current loading stage and elapsed time. Loading can be
+canceled from Settings. Failed changes retain the previous conversation and offer
+restoring its setup. Initialization has a two-minute deadline; speech preparation
+has a 90-second cap within that deadline. Technical details and runtime log paths
+are available separately from the main error message.
+
 ## Development and limits
 
 ```cmd
@@ -159,8 +167,9 @@ real microphone, voice quality or GPU acceptance. A live Piper-to-Kokoro switch
 has preserved conversation context; Chatterbox Nano hit its startup timeout in
 the latest runtime check, and retrying Kokoro recovered successfully.
 
-Native MiniCPM cannot reconstruct its audio state from text history. Changing
-its backend requires restarting Veyra. Native full-duplex speech and reference
+Native MiniCPM is listed as an experimental complete voice backend, not a
+separate speech decoder. It cannot reconstruct audio state from text history;
+switching to or from it requires explicit confirmation of a new conversation. Native full-duplex speech and reference
 voice conditioning remain experimental. Portable releases, public asset setup
 and asset redistribution/license review remain unfinished. Model and runtime
 licenses apply separately from this source checkout.

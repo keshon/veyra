@@ -123,7 +123,7 @@ func TestPickerSanitizesUnselectedChoices(t *testing.T) {
 }
 
 func TestModelSelectorsUseSharedService(t *testing.T) {
-	var chosen map[string]string
+	var chosen map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/models" {
 			t.Errorf("unexpected path %s", r.URL.Path)

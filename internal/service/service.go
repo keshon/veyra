@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/keshon/veyra/internal/character"
@@ -31,8 +32,8 @@ import (
 )
 
 // serveRuntime owns one set of model processes until its context is canceled.
-func serveRuntime(ctx context.Context, settings config.Settings, publish func(*runtime)) error {
-	if err := Check(settings); err != nil {
+func serveRuntime(ctx context.Context, settings config.Settings, report func(string, string), publish func(*runtime)) error {
+	if err := checkModelSetup(settings); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithCancel(ctx)
@@ -46,7 +47,7 @@ func serveRuntime(ctx context.Context, settings config.Settings, publish func(*r
 	if settings.DataDir == "" {
 		return fmt.Errorf("user data directory is required")
 	}
-	log.Printf("Assets: %s; user data: %s", root, settings.DataDir)
+	log.Printf("Starting %s", profile.Name)
 	sessionsDir := filepath.Join(settings.DataDir, "sessions")
 	if err = os.MkdirAll(sessionsDir, 0700); err != nil {
 		return err
@@ -55,6 +56,13 @@ func serveRuntime(ctx context.Context, settings config.Settings, publish func(*r
 	if err != nil {
 		return err
 	}
+	phase := func(stage string) {
+		log.Print(stage)
+		if report != nil {
+			report(stage, out)
+		}
+	}
+	phase("Checking installed files")
 	audioDir := filepath.Join(out, "audio")
 	nativeDir := filepath.Join(out, "native")
 	for _, dir := range []string{audioDir, nativeDir} {
@@ -171,14 +179,19 @@ func serveRuntime(ctx context.Context, settings config.Settings, publish func(*r
 		}
 		if residentSpeech {
 			warm = func(ctx context.Context) error {
-				log.Printf("Warming recognition, generation and %s; no microphone or playback.", profile.Speaking.Name)
+				phase("Preparing speech recognition")
 				if _, err := recognizer.Recognize(ctx, silenceWAV()); err != nil && !errors.Is(err, whisper.ErrNoSpeech) {
 					return err
 				}
-				if err := generator.Generate(ctx, []conversation.Message{{Role: "system", Text: "Reply with Ready."}, {Role: "user", Text: "Hello."}}, func(string) error { return nil }); err != nil {
+				phase("Preparing the conversation model")
+				warmGenerator := llamacpp.NewConfigured(address, llamacpp.Sampling{Temperature: 0, TopP: 1, RepeatPenalty: 1, MaxTokens: 8, ContextTokens: settings.Context})
+				if err := warmGenerator.Generate(ctx, []conversation.Message{{Role: "system", Text: "Reply with Ready."}, {Role: "user", Text: "Hello."}}, func(string) error { return nil }); err != nil && !errors.Is(err, conversation.ErrResponseLimit) {
 					return err
 				}
-				_, err := synth.Synthesize(ctx, "Ready.", "en", settings.Voice)
+				phase("Loading " + strings.Split(profile.Speaking.Name, " · ")[0])
+				speechCtx, cancelSpeech := context.WithTimeout(ctx, 90*time.Second)
+				defer cancelSpeech()
+				_, err := synth.Synthesize(speechCtx, "Ready.", "en", settings.Voice)
 				return err
 			}
 		}
@@ -256,19 +269,22 @@ func serveRuntime(ctx context.Context, settings config.Settings, publish func(*r
 			}
 		}(spec.name, child)
 	}
-	ready, stop := context.WithTimeout(ctx, 3*time.Minute)
+	ready, stop := context.WithTimeout(ctx, 2*time.Minute)
 	defer stop()
 	for i, c := range children {
+		phase(map[string]string{"whisper": "Loading speech recognition", "llamacpp": "Loading the conversation model"}[launches[i].name])
 		if err := c.Ready(ready, fmt.Sprintf("http://127.0.0.1:%d", launches[i].port)); err != nil {
-			return err
+			return fmt.Errorf("%s failed; see %s: %w", launches[i].name, filepath.Join(out, launches[i].name+".log"), err)
 		}
 	}
 	if err := warm(ready); err != nil {
 		return fmt.Errorf("warmup: %w", err)
 	}
+	phase("Preparing the voice session")
 	if err := session.Initialize(ready); err != nil {
 		return err
 	}
+	phase("Ready")
 	publish(&runtime{session: session, handler: httpapi.HandlerConfigured(session, audioDir, settings.Context, metadata)})
 	<-ctx.Done()
 	return nil

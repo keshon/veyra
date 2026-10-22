@@ -1,6 +1,6 @@
 <script lang="ts">
  import { onMount } from 'svelte'
- let { level=0, animate }: {level?:number;animate?:boolean}=$props()
+ let { level=0, animate,phase="ready" }: {level?:number;animate?:boolean;phase?:string}=$props()
  const id='veyra-orb-'+crypto.randomUUID()
  let time=$state(0), energy=$state(0), systemReduced=$state(false)
  const reduced=$derived(animate===undefined?systemReduced:!animate)
@@ -14,7 +14,7 @@
    if(document.hidden||now-last<33)return
    const elapsed=Math.min((now-last)/1000,.1);last=now
    energy+= (Math.max(0,Math.min(1,level))-energy)*.24
-   if(!reduced)time+=elapsed*(1.05+energy*2.1)
+   if(!reduced)time+=elapsed*(phase==="thinking"?5:phase==="speaking"?2+energy*8:phase==="listening"?1.5+energy*4:.5)
   }
   frame=requestAnimationFrame(animate)
   return()=>{cancelAnimationFrame(frame);preference.removeEventListener('change',update)}
@@ -29,7 +29,7 @@
   <linearGradient id={id+'-mist'} x1="0" y1="0" x2="0" y2="1"><stop stop-color="white" stop-opacity=".02"/><stop offset=".3" stop-color="#dcfff4" stop-opacity=".9"/><stop offset=".65" stop-color="#c9d7fb" stop-opacity=".75"/><stop offset="1" stop-color="white" stop-opacity="0"/></linearGradient>
   <filter id={id+'-cloud'} x="-60" y="-60" width="340" height="340" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
    <feTurbulence type="fractalNoise" baseFrequency={`${.018+Math.sin(time*.3)*.002} .024`} numOctaves="3" seed="8" result="noise"/>
-   <feDisplacementMap in="SourceGraphic" in2="noise" scale={reduced?34:36+energy*24} xChannelSelector="R" yChannelSelector="G"/>
+   <feDisplacementMap in="SourceGraphic" in2="noise" scale={reduced?34:36+energy*65} xChannelSelector="R" yChannelSelector="G"/>
    <feGaussianBlur stdDeviation="3.5"/>
   </filter>
   <filter id={id+'-soft'}><feGaussianBlur stdDeviation="13"/></filter>

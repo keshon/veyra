@@ -69,7 +69,7 @@ func HandlerConfigured(s *conversation.Session, output string, contextSize int, 
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
 		status := s.Status()
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"state": status.State, "detail": status.Detail, "context": contextSize, "context_usage": status.Context, "preferences": status.Preferences, "active_turn": status.ActiveTurn, "reference": status.Reference, "capabilities": s.Capabilities(), "prompts": s.Prompts(), "setup": metadata})
+		_ = json.NewEncoder(w).Encode(map[string]any{"state": status.State, "has_history": status.HasHistory, "detail": status.Detail, "context": contextSize, "context_usage": status.Context, "preferences": status.Preferences, "active_turn": status.ActiveTurn, "reference": status.Reference, "capabilities": s.Capabilities(), "prompts": s.Prompts(), "setup": metadata})
 	})
 	mux.HandleFunc("POST /api/preferences", func(w http.ResponseWriter, r *http.Request) {
 		var p language.Preferences

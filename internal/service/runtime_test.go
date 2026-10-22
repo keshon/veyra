@@ -144,3 +144,82 @@ func TestInitialLoadingAndRecoveryRemainAccessible(t *testing.T) {
 		t.Fatal(w.Body)
 	}
 }
+
+func TestNativeTransitionRequiresExplicitNewConversation(t *testing.T) {
+	replacement := testRuntime(t)
+	old := testRuntime(t)
+	m := &runtimeManager{ctx: context.Background(), current: old, catalog: modelCatalog{Switchable: true, Profiles: []modelChoice{{ID: "native", Mode: "minicpm-native", RequiresNew: true}}, Models: []modelChoice{}}, check: func(s config.Settings) error {
+		if s.ThinkingModel != "" {
+			t.Error("native received a separate text model")
+		}
+		return nil
+	}, start: func(context.Context, config.Settings) (*runtime, error) { return replacement, nil }}
+	if w := requestModels(m, "POST", "/api/models", `{"profile":"native","model":""}`); w.Code != 409 {
+		t.Fatal(w.Code, w.Body)
+	}
+	if w := requestModels(m, "POST", "/api/models", `{"profile":"native","model":"","new_conversation":true}`); w.Code != 200 {
+		t.Fatal(w.Code, w.Body)
+	}
+	waitSwitch(t, m)
+	if m.current != replacement {
+		t.Fatal("native transition not published")
+	}
+}
+func TestLoadingCanBeCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m := &runtimeManager{ctx: context.Background(), current: testRuntime(t), loading: true, loadCancel: cancel, stage: "Loading speech", started: time.Now()}
+	if w := requestModels(m, "GET", "/api/status", ""); !strings.Contains(w.Body.String(), "Loading speech") {
+		t.Fatal(w.Body)
+	}
+	if w := requestModels(m, "POST", "/api/models/cancel", `{}`); w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	if ctx.Err() == nil {
+		t.Fatal("load context not canceled")
+	}
+}
+
+func TestCanceledReadyRaceDoesNotPublishDeadRuntime(t *testing.T) {
+	old := testRuntime(t)
+	replacement := testRuntime(t)
+	entered, release := make(chan struct{}), make(chan struct{})
+	m := &runtimeManager{ctx: context.Background(), current: old, catalog: modelCatalog{Switchable: true, Profiles: []modelChoice{{ID: "nano"}}, Models: []modelChoice{{ID: "model.gguf"}}}, check: func(config.Settings) error { return nil }, start: func(context.Context, config.Settings) (*runtime, error) {
+		close(entered)
+		<-release
+		return replacement, nil
+	}}
+	if w := requestModels(m, "POST", "/api/models", `{"profile":"nano","model":"model.gguf"}`); w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	<-entered
+	requestModels(m, "POST", "/api/models/cancel", `{}`)
+	close(release)
+	waitSwitch(t, m)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.current != old || m.failure == "" {
+		t.Fatal("canceled runtime published as ready")
+	}
+}
+func TestHealthyRepeatIsNoOpButFailedSessionCanReload(t *testing.T) {
+	old := testRuntime(t)
+	replacement := testRuntime(t)
+	calls := 0
+	m := &runtimeManager{ctx: context.Background(), current: old, catalog: modelCatalog{Profile: "nano", Model: "model.gguf", Switchable: true, Profiles: []modelChoice{{ID: "nano"}}, Models: []modelChoice{{ID: "model.gguf"}}}, check: func(config.Settings) error { return nil }, start: func(context.Context, config.Settings) (*runtime, error) { calls++; return replacement, nil }}
+	body := `{"profile":"nano","model":"model.gguf"}`
+	if w := requestModels(m, "POST", "/api/models", body); w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	if calls != 0 {
+		t.Fatal("healthy runtime needlessly restarted")
+	}
+	old.session.Fail(errors.New("worker exited"))
+	if w := requestModels(m, "POST", "/api/models", body); w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	waitSwitch(t, m)
+	if calls != 1 {
+		t.Fatal("failed runtime not restarted")
+	}
+}
