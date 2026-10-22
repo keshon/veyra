@@ -1,12 +1,12 @@
 export type Voice = {id:string;name:string;language:string;default:boolean}
 export type Preferences = {prompt?:string;custom_prompt?:string;reply:string;fallback:string;voices?:Record<string,string>}
-export type Status = {has_history?:boolean;error_details?:string;startup?:{stage:string;started_at:string;stage_started_at:string;log_dir:string;can_cancel:boolean};setup?:{character?:string};prompts?:{id:string;name:string;instruction:string}[];state:string;detail:string;active_turn:number;context:number;reference?:string;preferences:Preferences;capabilities:{interruptions?:boolean;interruption_mode?:string;profile:string;languages:string[];automatic_language:boolean;text_input:boolean;voices:Voice[];listening?:string;thinking?:string;speaking?:string;reference_conditioning?:boolean;full_duplex?:boolean}}
+export type Status = {has_history?:boolean;error_details?:string;startup?:{stage:string;started_at:string;stage_started_at:string;log_dir:string;can_cancel:boolean};setup?:{character?:string;user?:string};prompts?:{id:string;name:string;instruction:string}[];state:string;detail:string;active_turn:number;context:number;reference?:string;preferences:Preferences;capabilities:{interruptions?:boolean;interruption_mode?:string;profile:string;languages:string[];automatic_language:boolean;text_input:boolean;voices:Voice[];listening?:string;thinking?:string;speaking?:string;reference_conditioning?:boolean;full_duplex?:boolean}}
 export type Event = {kind?:string;turn_id?:number;sequence?:number;text?:string;transcript?:string;language?:string;phase?:string;audio?:string;done?:boolean;error?:string;first_audio_ms?:number;elapsed_ms?:number;audio_chunks?:number}
 export async function status():Promise<Status> {const r=await fetch('/api/status',{cache:'no-store',signal:AbortSignal.timeout(3000)});if(!r.ok)throw Error(await r.text());return r.json()}
 export async function command(path:string,data?:unknown){const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});if(!r.ok)throw Error(await r.text())}
 export async function reference(data?:ArrayBuffer){const r=await fetch('/api/voice-reference',{method:'POST',headers:{'Content-Type':'audio/wav'},body:data,signal:AbortSignal.timeout(180000)});if(!r.ok)throw Error(await r.text())}
-export async function turn(path:'text'|'turn',input:string|ArrayBuffer,signal:AbortSignal,emit:(event:Event)=>Promise<void>){
- const r=await fetch('/api/'+path,{method:'POST',signal,headers:{'Content-Type':path==='text'?'application/json':'audio/wav'},body:path==='text'?JSON.stringify({text:input}):input as ArrayBuffer})
+export async function turn(path:'text'|'turn'|'regenerate',input:string|ArrayBuffer,signal:AbortSignal,emit:(event:Event)=>Promise<void>){
+ const r=await fetch('/api/'+path,{method:'POST',signal,headers:{'Content-Type':path!=='turn'?'application/json':'audio/wav'},body:path==='regenerate'?JSON.stringify({turn_id:Number(input)}):path==='text'?JSON.stringify({text:input}):input as ArrayBuffer})
  if(!r.ok)throw Error(await r.text());if(!r.body)throw Error('No response stream')
  const reader=r.body.getReader(),decoder=new TextDecoder();let pending='',complete=false
  const consume=async(line:string)=>{if(!line.trim())return;const ev:Event=JSON.parse(line);if(ev.error)throw Error(ev.error);await emit(ev);if(ev.done)complete=true}
@@ -23,3 +23,11 @@ export async function duplexStop(token:string){await fetch('/api/duplex/stop',{m
 
 export type ModelCatalog={profile:string;model:string;switchable:boolean;can_restore?:boolean;profiles:{id:string;name:string;unavailable?:string;mode?:string;requires_new?:boolean;experimental?:boolean}[];models:{id:string;name:string}[]}
 export async function models():Promise<ModelCatalog>{const r=await fetch("/api/models",{cache:"no-store"});if(!r.ok)throw Error(await r.text());return r.json()}
+
+export type Generation={context:number;max_tokens:number;temperature:number;top_p:number;top_k:number;repeat_penalty:number;seed:number}
+export type RuntimePreferences={generation:Generation;character:string;user:string}
+export type EditableSettings={preferences:RuntimePreferences;reload_sampling:boolean;models?:ModelCatalog;warning?:string}
+export type CharacterChoice={id:string;name:string}
+export async function settings():Promise<EditableSettings>{const r=await fetch('/api/settings');if(!r.ok)throw Error(await r.text());return r.json()}
+export async function characters():Promise<CharacterChoice[]>{const r=await fetch('/api/characters');if(!r.ok)throw Error(await r.text());return r.json()}
+export async function importCharacter(file:File):Promise<CharacterChoice>{const r=await fetch('/api/characters/import',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});if(!r.ok)throw Error(await r.text());return r.json()}

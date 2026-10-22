@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +19,7 @@ import (
 )
 
 type runtime struct {
+	apply   func(config.Settings)
 	session *conversation.Session
 	handler http.Handler
 	close   func()
@@ -138,6 +140,10 @@ func (m *runtimeManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "cross-origin request", 403)
 		return
 	}
+	if r.URL.Path == "/api/settings" || r.URL.Path == "/api/characters" || r.URL.Path == "/api/characters/import" {
+		m.preferencesHTTP(w, r)
+		return
+	}
 	if r.URL.Path == "/api/models/cancel" && r.Method == "POST" {
 		m.mu.Lock()
 		if m.loading && m.loadCancel != nil {
@@ -224,9 +230,10 @@ func (m *runtimeManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (m *runtimeManager) change(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Profile         string `json:"profile"`
-		Model           string `json:"model"`
-		NewConversation bool   `json:"new_conversation"`
+		Profile         string              `json:"profile"`
+		Model           string              `json:"model"`
+		NewConversation bool                `json:"new_conversation"`
+		Preferences     *config.Preferences `json:"preferences,omitempty"`
 	}
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384))
 	d.DisallowUnknownFields()
@@ -264,12 +271,59 @@ func (m *runtimeManager) change(w http.ResponseWriter, r *http.Request) {
 	if selected.Mode == "minicpm-native" {
 		validModel = true
 	}
-	if !c.Switchable || !validProfile || !validModel {
+	sameSetup := input.Profile == c.Profile && input.Model == c.Model
+	if input.Preferences != nil && sameSetup {
+		if profile, err := next.LoadProfile(); err == nil {
+			validProfile, validModel = true, true
+			selected.Mode = profile.Mode
+			selected.RequiresNew = profile.Mode == "minicpm-native"
+		}
+	}
+	if (!c.Switchable && !(input.Preferences != nil && sameSetup)) || !validProfile || !validModel {
 		m.gate.Unlock()
 		http.Error(w, "Choose an installed backend and a compatible text model.", 400)
 		return
 	}
-	if old != nil && old.session.Status().State == "ready" && !failed && !selected.RequiresNew && input.Profile == c.Profile && input.Model == c.Model {
+	preferencesChanged := false
+	if input.Preferences != nil {
+		p := input.Preferences
+		if err := p.Generation.Validate(); err != nil {
+			m.gate.Unlock()
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		if strings.TrimSpace(p.User) == "" || len(p.User) > 100 {
+			m.gate.Unlock()
+			http.Error(w, "user name must contain 1–100 bytes", 400)
+			return
+		}
+		preferencesChanged = next.Preferences() != *p
+		characterChanged := next.Character != p.Character || next.User != p.User
+		if characterChanged && !input.NewConversation {
+			m.gate.Unlock()
+			http.Error(w, "Changing character or user requires a new conversation.", 409)
+			return
+		}
+		selected.RequiresNew = selected.RequiresNew || characterChanged
+		if p.Character != "" && p.Character != next.Character {
+			base := filepath.Join(next.DataDir, "characters")
+			rel, err := filepath.Rel(base, p.Character)
+			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+				m.gate.Unlock()
+				http.Error(w, "Import the character card first.", 400)
+				return
+			}
+		}
+		next.SetGeneration(p.Generation)
+		next.Character = p.Character
+		next.User = p.User
+		if _, err := Metadata(next); err != nil {
+			m.gate.Unlock()
+			http.Error(w, err.Error(), 400)
+			return
+		}
+	}
+	if old != nil && old.session.Status().State == "ready" && !failed && !preferencesChanged && !selected.RequiresNew && input.Profile == c.Profile && input.Model == c.Model {
 		m.gate.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte("{}"))
@@ -280,7 +334,9 @@ func (m *runtimeManager) change(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Switching native voice backends requires an explicit new conversation.", 409)
 		return
 	}
-	next.Profile, next.ProfileFile, next.ThinkingModel, next.Voice = input.Profile, "", input.Model, ""
+	if input.Preferences == nil || !sameSetup {
+		next.Profile, next.ProfileFile, next.ThinkingModel, next.Voice = input.Profile, "", input.Model, ""
+	}
 	if selected.Mode == "minicpm-native" {
 		next.ThinkingModel = ""
 	}
@@ -291,6 +347,20 @@ func (m *runtimeManager) change(w http.ResponseWriter, r *http.Request) {
 	if err := m.check(next); err != nil {
 		m.gate.Unlock()
 		http.Error(w, err.Error(), 400)
+		return
+	}
+	if input.Preferences != nil && old != nil && old.apply != nil && old.session.Status().State == "ready" && next.Context == m.settings.Context && !selected.RequiresNew && input.Profile == c.Profile && input.Model == c.Model && !failed {
+		if err := next.SavePreferences(); err != nil {
+			m.gate.Unlock()
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		old.apply(next)
+		m.mu.Lock()
+		m.settings = next
+		m.mu.Unlock()
+		m.gate.Unlock()
+		w.Write([]byte("{}"))
 		return
 	}
 	m.mu.Lock()
@@ -330,6 +400,12 @@ func (m *runtimeManager) change(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			m.failLocked(err)
 			return
+		}
+		if input.Preferences != nil {
+			if err := next.SavePreferences(); err != nil {
+				m.errorDetails = "Settings applied but could not be saved: " + err.Error()
+				log.Print(m.errorDetails)
+			}
 		}
 		m.current, m.settings = replacement, next
 		m.catalog.Profile, m.catalog.Model = input.Profile, input.Model

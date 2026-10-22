@@ -75,3 +75,12 @@ button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-vis
 .startup-controls .small-button{min-width:136px;min-height:38px}
 
 .message-heading{display:flex;align-items:center;gap:8px;margin-bottom:6px}.message-heading strong{margin:0}.message-heading .replay-button{width:28px;height:28px}.replay-button svg{width:14px;height:14px}
+
+.drawer .field input:not([type=file]){width:100%;min-height:36px;border:1px solid var(--control);border-radius:6px;background:var(--panel);color:var(--text);padding:7px 12px;font-size:14px}
+.drawer .field input[type=file]{font-size:13px;max-width:100%;color:var(--muted)}
+.drawer input::file-selector-button{font:inherit;padding:7px 12px;margin-right:12px;border:1px solid var(--control);border-radius:6px;background:var(--panel);color:var(--text);cursor:pointer}
+.drawer input::file-selector-button:hover{background:var(--hover)}
+.generation-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px}.drawer-nav{flex-wrap:wrap}.drawer-nav button{flex-basis:28%}
+@media(max-width:360px){.generation-grid{grid-template-columns:1fr}}
+
+.drawer{position:fixed;inset:0}.generation-grid .field{margin:12px 0}.generation-grid{gap:8px 16px}

@@ -17,6 +17,7 @@ import (
 
 type Sampling struct {
 	Temperature, TopP, RepeatPenalty float64
+	TopK, Seed                       int
 	MaxTokens                        int
 	ContextTokens                    int
 }
@@ -32,6 +33,10 @@ func New(address string) *Client {
 func NewConfigured(address string, sampling Sampling) *Client {
 	return &Client{address: address, sampling: sampling}
 }
+
+// SetSampling is called only while the service excludes active operations.
+func (c *Client) SetSampling(s Sampling) { c.sampling = s }
+
 func (c *Client) Generate(ctx context.Context, messages []conversation.Message, emit func(string) error) error {
 	return c.generate(ctx, messages, nil, emit)
 }
@@ -39,7 +44,7 @@ func (c *Client) Generate(ctx context.Context, messages []conversation.Message, 
 func (c *Client) generate(ctx context.Context, messages []conversation.Message, format any, emit func(string) error) error {
 	url := c.address
 	native := nativeMessages(messages)
-	payload := map[string]any{"messages": native, "stream": true, "max_tokens": c.sampling.MaxTokens, "temperature": c.sampling.Temperature, "top_p": c.sampling.TopP, "repeat_penalty": c.sampling.RepeatPenalty, "chat_template_kwargs": map[string]any{"enable_thinking": false}}
+	payload := map[string]any{"top_k": c.sampling.TopK, "seed": c.sampling.Seed, "messages": native, "stream": true, "max_tokens": c.sampling.MaxTokens, "temperature": c.sampling.Temperature, "top_p": c.sampling.TopP, "repeat_penalty": c.sampling.RepeatPenalty, "chat_template_kwargs": map[string]any{"enable_thinking": false}}
 	if c.jsonSummary {
 		payload["response_format"] = map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "conversation_summary", "strict": true, "schema": map[string]any{"type": "object", "properties": map[string]any{"summary": map[string]any{"type": "string", "maxLength": 1024}}, "required": []string{"summary"}, "additionalProperties": false}}}
 	}

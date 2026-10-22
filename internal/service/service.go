@@ -80,6 +80,7 @@ func serveRuntime(ctx context.Context, settings config.Settings, report func(str
 	}
 	launches := []launch{}
 	var backend conversation.Backend
+	var apply func(config.Settings)
 	warm := func(context.Context) error { return nil }
 	prompts, err := config.LoadPrompts(root, settings.Prompts)
 	if err != nil {
@@ -113,7 +114,7 @@ func serveRuntime(ctx context.Context, settings config.Settings, report func(str
 			}
 			interruptionMode = "cancel"
 		}
-		args = []string{"--host", "127.0.0.1", "--port", strconv.Itoa(settings.ModelPort), "--model", model, "--ctx-size", strconv.Itoa(settings.Context), "--n-gpu-layers", strconv.Itoa(settings.GPULayers), "--parallel", "1", "--batch-size", "256", "--ubatch-size", "128", "--predict", strconv.Itoa(settings.MaxTokens), "--threads", "6", "--temp", strconv.FormatFloat(settings.Temperature, 'f', -1, 64), "--top-p", strconv.FormatFloat(settings.TopP, 'f', -1, 64), "--repeat-penalty", strconv.FormatFloat(settings.RepeatPenalty, 'f', -1, 64)}
+		args = []string{"--host", "127.0.0.1", "--port", strconv.Itoa(settings.ModelPort), "--model", model, "--ctx-size", strconv.Itoa(settings.Context), "--n-gpu-layers", strconv.Itoa(settings.GPULayers), "--parallel", "1", "--batch-size", "256", "--ubatch-size", "128", "--predict", strconv.Itoa(settings.MaxTokens), "--threads", "6", "--top-k", strconv.Itoa(settings.TopK), "--seed", strconv.Itoa(settings.Seed), "--temp", strconv.FormatFloat(settings.Temperature, 'f', -1, 64), "--top-p", strconv.FormatFloat(settings.TopP, 'f', -1, 64), "--repeat-penalty", strconv.FormatFloat(settings.RepeatPenalty, 'f', -1, 64)}
 		backend = minicpm.NewConfigured(nativeDir, address, &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 5 * time.Minute}, minicpm.Config{Duplex: settings.Duplex, SettledCancellation: profile.Native.SettledCancellation, ModelDir: profile.Native.ModelDir, TTSDir: profile.Native.TTSDir, Reference: profile.Native.Reference, Capabilities: conversation.Capabilities{Interruptions: true, InterruptionMode: interruptionMode, Profile: profile.Name, Languages: []string{"en"}, Listening: profile.Listening.Name, Thinking: profile.Thinking.Name, Speaking: profile.Speaking.Name, ReferenceConditioning: true}})
 	} else {
 		asrBinary := profile.Listening.Binary
@@ -126,7 +127,10 @@ func serveRuntime(ctx context.Context, settings config.Settings, report func(str
 		asrModel := profile.Listening.Model
 		launches = append(launches, launch{"whisper", asrBinary, []string{"-m", asrModel, "--host", "127.0.0.1", "--port", strconv.Itoa(settings.ASRPort), "-t", "4", "-l", "auto", "-bs", "5", "-bo", "5", "-nt", "-nc", "-nlp"}, settings.ASRPort})
 
-		generator := llamacpp.NewConfigured(address, llamacpp.Sampling{Temperature: settings.Temperature, TopP: settings.TopP, RepeatPenalty: settings.RepeatPenalty, MaxTokens: settings.MaxTokens, ContextTokens: settings.Context})
+		generator := llamacpp.NewConfigured(address, llamacpp.Sampling{TopK: settings.TopK, Seed: settings.Seed, Temperature: settings.Temperature, TopP: settings.TopP, RepeatPenalty: settings.RepeatPenalty, MaxTokens: settings.MaxTokens, ContextTokens: settings.Context})
+		apply = func(s config.Settings) {
+			generator.SetSampling(llamacpp.Sampling{Temperature: s.Temperature, TopP: s.TopP, TopK: s.TopK, Seed: s.Seed, RepeatPenalty: s.RepeatPenalty, MaxTokens: s.MaxTokens, ContextTokens: s.Context})
+		}
 		caps := conversation.Capabilities{Profile: profile.Name, Languages: []string{"en", "ru"}, AutomaticLanguage: true, TextInput: true, Listening: profile.Listening.Name, Thinking: profile.Thinking.Name, Speaking: profile.Speaking.Name}
 		var synth speech.Synthesizer
 		recognizer := whisper.New(fmt.Sprintf("http://127.0.0.1:%d", settings.ASRPort))
@@ -285,7 +289,7 @@ func serveRuntime(ctx context.Context, settings config.Settings, report func(str
 		return err
 	}
 	phase("Ready")
-	publish(&runtime{session: session, handler: httpapi.HandlerConfigured(session, audioDir, settings.Context, metadata)})
+	publish(&runtime{session: session, apply: apply, handler: httpapi.HandlerConfigured(session, audioDir, settings.Context, metadata)})
 	<-ctx.Done()
 	return nil
 }

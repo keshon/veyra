@@ -173,3 +173,27 @@ switching to or from it requires explicit confirmation of a new conversation. Na
 voice conditioning remain experimental. Portable releases, public asset setup
 and asset redistribution/license review remain unfinished. Model and runtime
 licenses apply separately from this source checkout.
+
+### Generation and characters
+
+In the web Settings, **Generation** controls the context window, maximum reply tokens,
+temperature, top-p, top-k, repetition penalty and seed. Composed backends apply
+sampling changes between turns; context changes reload models. Native MiniCPM
+changes require a reload and explicit new-conversation consent.
+
+In the terminal, `/settings` opens the shared settings menu. `/generation` offers
+values to edit; `/generation temp 0.7` applies one directly. Other keys are `top-p`,
+`top-k`, `repeat-penalty`, `max-tokens`, `ctx` and `seed`. Native reloads offer a
+confirmation; explicit commands can use `/generation --new temp 0.7`.
+
+Import a PNG or JSON card in web Settings > Conversation, or use
+`/character import <path>` in the terminal. `/character` opens the installed library.
+Changing character starts a new conversation after confirmation. Nonempty lorebooks
+are not supported. Imported cards live in `<data-dir>/characters`; generation and
+identity preferences are saved in `<data-dir>/preferences.json`. Explicit launch flags
+override saved values; `-config` uses its own configuration instead of saved preferences.
+
+Use **Regenerate reply** in web history to replace an answer. Confirming removes that
+answer and all later exchanges from both the displayed conversation and model context.
+Exchanges already removed by context compaction cannot be regenerated. Native audio
+sessions do not support text-history regeneration.

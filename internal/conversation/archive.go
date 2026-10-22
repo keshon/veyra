@@ -122,7 +122,7 @@ func (s *Session) Saved() ([]SavedConversation, error) {
 // saveLocked atomically replaces retained context. WAVs and runtime state are
 // not stored. This is a resumable context snapshot, not a full transcript archive.
 func (s *Session) saveLocked() error {
-	if s.archiveDir == "" || len(s.history) == 0 {
+	if s.archiveDir == "" || (len(s.history) == 0 && s.savedID == "") {
 		return nil
 	}
 	if s.savedID == "" {
@@ -203,6 +203,11 @@ func (s *Session) Resume(ctx context.Context, id string) (SavedConversation, err
 		return SavedConversation{}, err
 	}
 	s.history = append([]Message(nil), saved.Messages...)
+	for _, m := range s.history {
+		if m.TurnID > s.nextID {
+			s.nextID = m.TurnID
+		}
+	}
 	s.summary = saved.Summary
 	s.preferences = saved.Preferences.Clone()
 	s.preferences.Instruction = saved.Instruction

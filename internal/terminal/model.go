@@ -198,7 +198,11 @@ func (m *model) begin(text string, audio []byte) tea.Cmd {
 		return nil
 	}
 	if text != "" {
-		m.add("You: " + text)
+		user := m.status.Setup.User
+		if user == "" {
+			user = "You"
+		}
+		m.add(user + ": " + text)
 	}
 	m.busy = true
 	m.turnWarning = ""
@@ -279,6 +283,8 @@ func (m *model) command(text string) tea.Cmd {
 	name, arg, _ := strings.Cut(text, " ")
 	arg = strings.TrimSpace(arg)
 	switch name {
+	case "/generation", "/character":
+		return m.preferencesCommand(name, arg)
 	case "/talk":
 		return m.record()
 	case "/stop":
@@ -565,6 +571,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		return m, m.poll()
+	case preferenceChoicesMsg:
+		if msg.err != nil {
+			m.notice = msg.err.Error()
+			return m, nil
+		}
+		return m, m.openPicker(msg.title, msg.choices)
 	case playbackMarkedMsg:
 		m.busy = false
 		if msg.err != nil {

@@ -32,6 +32,8 @@ type Settings struct {
 	User                       string  `json:"user"`
 	Voice                      string  `json:"voice"`
 	Microphone                 string  `json:"microphone"`
+	TopK                       int     `json:"top_k"`
+	Seed                       int     `json:"seed"`
 	Temperature                float64 `json:"temperature"`
 	TopP                       float64 `json:"top_p"`
 	RepeatPenalty              float64 `json:"repeat_penalty"`
@@ -56,7 +58,7 @@ type Settings struct {
 }
 
 func Load(args []string) (Settings, error) {
-	s := Settings{PreferCharacterPrompt: true, PreferCharacterPostHistory: true, MicEndMS: 1100, MicMaxSeconds: 120, MicVAD: "silero", MicThreshold: 0.02, MicStartMS: 300, User: "User", Temperature: 0.7, TopP: 0.9, RepeatPenalty: 1.05, MaxTokens: 256, Root: ".", Listen: "127.0.0.1:8090", Profile: "chatterbox-nano", Reply: "en", Fallback: "en", Context: 4096, GPULayers: 0, ModelPort: 19081, ASRPort: 19083, VoiceCatalog: "profiles/voices.json"}
+	s := Settings{PreferCharacterPrompt: true, PreferCharacterPostHistory: true, MicEndMS: 1100, MicMaxSeconds: 120, MicVAD: "silero", MicThreshold: 0.02, MicStartMS: 300, User: "User", TopK: 40, Seed: -1, Temperature: 0.7, TopP: 0.9, RepeatPenalty: 1.05, MaxTokens: 256, Root: ".", Listen: "127.0.0.1:8090", Profile: "chatterbox-nano", Reply: "en", Fallback: "en", Context: 4096, GPULayers: 0, ModelPort: 19081, ASRPort: 19083, VoiceCatalog: "profiles/voices.json"}
 	path := ""
 	for i, arg := range args {
 		if strings.HasPrefix(arg, "-config=") {
@@ -97,6 +99,8 @@ func Load(args []string) (Settings, error) {
 	f.IntVar(&s.MicMaxSeconds, "mic-max-seconds", s.MicMaxSeconds, "maximum voice recording, 5 through 120 seconds")
 	f.IntVar(&s.MicStartMS, "mic-start-ms", s.MicStartMS, "energy fallback only: sustained speech before activation (100 through 600 ms)")
 	f.StringVar(&s.Microphone, "microphone", s.Microphone, "DirectShow microphone name for terminal recording")
+	f.IntVar(&s.TopK, "top-k", s.TopK, "top-k sampling, 0 disables")
+	f.IntVar(&s.Seed, "seed", s.Seed, "sampling seed, -1 random")
 	f.Float64Var(&s.Temperature, "temp", s.Temperature, "sampling temperature, 0 through 2")
 	f.Float64Var(&s.TopP, "top-p", s.TopP, "nucleus sampling probability, above 0 through 1")
 	f.Float64Var(&s.RepeatPenalty, "repeat-penalty", s.RepeatPenalty, "repetition penalty, 1 through 2")
@@ -142,11 +146,18 @@ func Load(args []string) (Settings, error) {
 	if err != nil {
 		return s, fmt.Errorf("user data directory: %w", err)
 	}
+	if path == "" {
+		explicit := map[string]bool{}
+		f.Visit(func(v *flag.Flag) { explicit[v.Name] = true })
+		if err := s.loadPreferences(explicit); err != nil {
+			return s, err
+		}
+	}
+	if err := s.Generation().Validate(); err != nil {
+		return s, err
+	}
 	if s.ProfileFile == "" && s.Profile != "composed" && s.Profile != "minicpm" && s.Profile != "minicpm-native" && s.Profile != "kokoro" && s.Profile != "chatterbox" && s.Profile != "chatterbox-nano" && s.Profile != "chatterbox-turbo" {
 		return s, fmt.Errorf("unknown profile %q", s.Profile)
-	}
-	if math.IsNaN(s.Temperature) || math.IsInf(s.Temperature, 0) || s.Temperature < 0 || s.Temperature > 2 || math.IsNaN(s.TopP) || s.TopP <= 0 || s.TopP > 1 || math.IsNaN(s.RepeatPenalty) || s.RepeatPenalty < 1 || s.RepeatPenalty > 2 || s.MaxTokens < 16 || s.MaxTokens > 2048 {
-		return s, fmt.Errorf("invalid generation settings")
 	}
 	if s.MicVAD != "silero" && s.MicVAD != "energy" {
 		return s, fmt.Errorf("mic-vad must be silero or energy")
@@ -172,7 +183,7 @@ func Load(args []string) (Settings, error) {
 	if err != nil || !(host == "localhost" || ip != nil && ip.IsLoopback()) || n < 1 || n > 65535 {
 		return s, fmt.Errorf("listen must be a loopback address with a valid port")
 	}
-	if s.Context < 512 || s.Context > 32768 || s.GPULayers < 0 || s.ModelPort < 1 || s.ModelPort > 65535 || s.ASRPort < 1 || s.ASRPort > 65535 {
+	if s.GPULayers < 0 || s.ModelPort < 1 || s.ModelPort > 65535 || s.ASRPort < 1 || s.ASRPort > 65535 {
 		return s, fmt.Errorf("invalid context, GPU layers or native port")
 	}
 	if s.ModelPort == s.ASRPort && s.Profile != "minicpm-native" || s.ModelPort == n || s.Profile != "minicpm-native" && s.ASRPort == n {

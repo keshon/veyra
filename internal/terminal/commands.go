@@ -15,6 +15,8 @@ type choice struct{ value, label, description string }
 
 // Commands and help share one vocabulary. Provider actions remain in command().
 var commands = []choice{
+	{"/generation", "/generation", "Inspect or change generation settings"},
+	{"/character", "/character", "Choose a character; /character import <PNG or JSON path>"},
 	{"/talk", "/talk", "Record a message; run again to send"},
 	{"/stop", "/stop", "Stop the response or discard a recording"},
 	{"/live", "/live", "Toggle hands-free conversation"},
@@ -241,5 +243,5 @@ func (m *model) stopResponse() tea.Cmd {
 
 func (m *model) settingsPicker() tea.Cmd {
 	m.add(fmt.Sprintf("Recognition: %s\nGeneration: %s\nSpeech: %s", m.status.Capabilities.Listening, m.status.Capabilities.Thinking, m.status.Capabilities.Speaking))
-	return m.openPicker("Voice settings", []choice{{"/backend", "Voice backend", "Keeps conversation"}, {"/model", "Generation model", "Keeps conversation"}, {"/mic", "Microphone", m.microphone}, {"/voice", "Speech voice", ""}, {"/prompt", "System prompt", "Starts a new conversation"}, {"/help", "Keyboard and commands", ""}})
+	return m.openPicker("Settings", []choice{{"/generation", "Generation settings", "Context, reply length and sampling"}, {"/character", "Character", "Import or choose a card"}, {"/backend", "Voice backend", "Keeps conversation"}, {"/model", "Generation model", "Keeps conversation"}, {"/mic", "Microphone", m.microphone}, {"/voice", "Speech voice", ""}, {"/prompt", "System prompt", "Starts a new conversation"}, {"/help", "Keyboard and commands", ""}})
 }

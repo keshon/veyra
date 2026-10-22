@@ -18,7 +18,7 @@ func resolve(root, path string) string {
 	return filepath.Join(root, path)
 }
 func Metadata(s config.Settings) (httpapi.Metadata, error) {
-	m := httpapi.Metadata{Generation: map[string]any{"context_tokens": s.Context, "temperature": s.Temperature, "top_p": s.TopP, "repeat_penalty": s.RepeatPenalty, "max_tokens": s.MaxTokens}}
+	m := httpapi.Metadata{User: s.User, Generation: map[string]any{"context_tokens": s.Context, "temperature": s.Temperature, "top_k": s.TopK, "seed": s.Seed, "top_p": s.TopP, "repeat_penalty": s.RepeatPenalty, "max_tokens": s.MaxTokens}}
 	if s.Character != "" {
 		c, err := character.Load(resolve(s.Root, s.Character))
 		if err != nil {

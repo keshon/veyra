@@ -19,6 +19,7 @@ import (
 )
 
 type Metadata struct {
+	User         string         `json:"user,omitempty"`
 	Warnings     []string       `json:"warnings,omitempty"`
 	Character    string         `json:"character,omitempty"`
 	Introduction string         `json:"introduction,omitempty"`
@@ -203,6 +204,16 @@ func HandlerConfigured(s *conversation.Session, output string, contextSize int, 
 			return
 		}
 		respond(w, r, conversation.Input{Audio: data})
+	})
+	mux.HandleFunc("POST /api/regenerate", func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			TurnID uint64 `json:"turn_id"`
+		}
+		if err := decode(w, r, &input); err != nil || input.TurnID == 0 {
+			http.Error(w, "provide a valid turn_id", 400)
+			return
+		}
+		respond(w, r, conversation.Input{Regenerate: input.TurnID})
 	})
 	mux.HandleFunc("POST /api/text", func(w http.ResponseWriter, r *http.Request) {
 		var input struct {

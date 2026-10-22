@@ -17,10 +17,12 @@ var ErrBusy = errors.New("a conversation operation is already running")
 var ErrNotReady = errors.New("conversation is not ready")
 
 type Input struct {
-	Audio []byte
-	Text  string
+	Regenerate uint64
+	Audio      []byte
+	Text       string
 }
 type Message struct {
+	TurnID      uint64 `json:"turn_id,omitempty"`
 	PostHistory string `json:"post_history,omitempty"`
 	Role        string `json:"role"`
 	Text        string `json:"text"`
@@ -304,7 +306,7 @@ func (s *Session) reset(ctx context.Context, operation func(context.Context) err
 	return nil
 }
 func (s *Session) Respond(ctx context.Context, input Input, emit func(Event) error) error {
-	if (len(input.Audio) > 0) == (input.Text != "") {
+	if input.Regenerate == 0 && (len(input.Audio) > 0) == (input.Text != "") {
 		return fmt.Errorf("provide exactly one audio or text input")
 	}
 	if len(input.Audio) > 0 {
@@ -327,6 +329,31 @@ func (s *Session) Respond(ctx context.Context, input Input, emit func(Event) err
 		s.mu.Unlock()
 		return ErrNotReady
 	}
+	if input.Regenerate != 0 {
+		if len(input.Audio) > 0 || input.Text != "" || !s.backend.Capabilities().TextInput {
+			s.mu.Unlock()
+			return fmt.Errorf("regeneration requires a text-capable conversation")
+		}
+		index := -1
+		for i, m := range s.history {
+			if m.TurnID == input.Regenerate && m.Role == "user" {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			s.mu.Unlock()
+			return fmt.Errorf("this exchange is no longer available for regeneration (it may have been compacted)")
+		}
+		input.Text = s.history[index].Text
+		oldHistory := s.history
+		s.history = append([]Message(nil), s.history[:index]...)
+		if err := s.saveLocked(); err != nil {
+			s.history = oldHistory
+			s.mu.Unlock()
+			return err
+		}
+	}
 	s.nextID++
 	id := s.nextID
 	s.activeID = id
@@ -343,38 +370,45 @@ func (s *Session) Respond(ctx context.Context, input Input, emit func(Event) err
 	var sequence uint64
 	userText, replyText, detected := input.Text, "", ""
 	dropped := 0
-	err := s.backend.Respond(turnCtx, turn, func(event Event) error {
-		delivery.Lock()
-		defer delivery.Unlock()
-		if err := turnCtx.Err(); err != nil {
-			return err
-		}
-		s.mu.Lock()
-		current := s.activeID == id
-		if current && event.Context != nil {
-			if event.Summary != "" {
-				s.summary = event.Summary
+	err := func() error {
+		if input.Regenerate != 0 {
+			if err := emit(Event{Kind: "regenerated", TurnID: id}); err != nil {
+				return err
 			}
-			s.contextUsage = *event.Context
-			dropped = event.Context.DroppedMessages
 		}
-		s.mu.Unlock()
-		if !current {
-			return context.Canceled
-		}
-		sequence++
-		event.TurnID = id
-		event.Sequence = sequence
-		event.Audio = append([]byte(nil), event.Audio...)
-		if event.Kind == "transcript" {
-			userText = event.Text
-			detected = event.Language
-		}
-		if event.Kind == "text" {
-			replyText += event.Text
-		}
-		return emit(event)
-	})
+		return s.backend.Respond(turnCtx, turn, func(event Event) error {
+			delivery.Lock()
+			defer delivery.Unlock()
+			if err := turnCtx.Err(); err != nil {
+				return err
+			}
+			s.mu.Lock()
+			current := s.activeID == id
+			if current && event.Context != nil {
+				if event.Summary != "" {
+					s.summary = event.Summary
+				}
+				s.contextUsage = *event.Context
+				dropped = event.Context.DroppedMessages
+			}
+			s.mu.Unlock()
+			if !current {
+				return context.Canceled
+			}
+			sequence++
+			event.TurnID = id
+			event.Sequence = sequence
+			event.Audio = append([]byte(nil), event.Audio...)
+			if event.Kind == "transcript" {
+				userText = event.Text
+				detected = event.Language
+			}
+			if event.Kind == "text" {
+				replyText += event.Text
+			}
+			return emit(event)
+		})
+	}()
 	if err == nil {
 		err = turnCtx.Err()
 	}
@@ -392,9 +426,9 @@ func (s *Session) Respond(ctx context.Context, input Input, emit func(Event) err
 		s.history = append([]Message(nil), s.history[dropped:]...)
 	}
 	if userText != "" && replyText != "" {
-		s.history = append(s.history, Message{Role: "user", Text: userText})
+		s.history = append(s.history, Message{TurnID: id, Role: "user", Text: userText})
 		if replyText != "" {
-			s.history = append(s.history, Message{Role: "assistant", Text: replyText, Interrupted: err != nil})
+			s.history = append(s.history, Message{TurnID: id, Role: "assistant", Text: replyText, Interrupted: err != nil})
 		}
 	}
 	// This is a storage safeguard; the text provider budgets model context.
